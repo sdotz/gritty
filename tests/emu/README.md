@@ -47,6 +47,7 @@ then one `cfw_task_poll` with every boot phase open: settings, recipes, look, fo
 - `menu`: all tabs; Auto ISO writes AE_F +0xBE/+0xC4/+0xC2/+0x2C8/+0xCA (crop, Movie) and restores stock;
   Auto-Hi shutter and Clarity props restored; INFO values and the 1 s cell refresh.
 - `snap`: 1m -> 0.7 m, 1.5m -> 1.2 m (tables, literals, code halfwords, labels), back to STOCK.
+- `afaux`: AF assist WITH FLASH: `Prop_Get(0x1D0)` through the TTY getter (the `Prop_Get` stub tail-calls a getter slot that differs from stock) and the AF parameter entry (stub of the stock setter `0xA016A57C`) off while the flash is down, the camera's value while it is up, off with a conversion lens, a stale entry corrected at the next poll, the getter slot cleared and the camera's value back on STOCK; no property written.
 - `recipes`: previewing each recipe repoints only Setting2's IQ lists (matrix, hue, tone, YCbCr), matrix
   record value, Stock after the last recipe (no look, Right stops there), close restores IQ RAM, apply to MY2
   (slot file, name cache, config `rc2.*`), dial shows the slot look, reboot with that config restores it, also

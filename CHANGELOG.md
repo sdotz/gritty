@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- TTY Menu, FOCUS: *AF assist light* STOCK / WITH FLASH. With the camera's AF Auxiliary Light on, WITH FLASH
+  lights the lamp only while the built-in flash is popped up. No property is written: the camera's menu and
+  saved setting stay its own.
 - LUT converter 1.1.0: after the staged fit, all stages (matrix, post matrix, hue sectors and the 33 knots
   per curve) are refined together on CIEDE2000 over natural-image-like colours, skin, a hue ring and
   saturated colours, with the grey scale held to the LUT (black and white point included); the curves

@@ -434,6 +434,43 @@ def sc_snap(ctx):
     finish(ctx, s)
 
 
+
+def sc_afaux(ctx):
+    """FOCUS: AF assist light WITH FLASH: Prop_Get(0x1D0) (what the stock pushes read) and the AF parameter entry are
+    off while the flash is down; the stored value stays the camera's; STOCK clears the getter and writes it back."""
+    import machine
+    check = ctx.check
+    s = Session(ctx)
+    m = s.m
+    s.request(MENU_SETTINGS)
+    s.keys(KEY_RIGHT, KEY_DOWN, KEY_DOWN, KEY_OK)
+    check(s.setting(15) == 'WITH FLASH', f'afaux = {s.setting(15)}')
+    check(m.af_param(0xB) == 0 and m.props[0x1D0] == 1, 'flash down: AF assist entry not off, or property changed')
+    prop_get = lambda pid: m.call_addr(machine.FN['prop_get'] | 1, pid)
+    check(prop_get(0x1D0) == 0, 'flash down: Prop_Get(AF assist) not OFF for the stock pushes')
+    check(m.af_sets and all(lock > 0 for _, _, lock in m.af_sets), 'AF parameter written outside the property lock')
+    m.props[0x250] = 1
+    m.call('settings_poll')
+    check(m.af_param(0xB) == 1 and prop_get(0x1D0) == 1, 'flash up: AF assist entry or Prop_Get not the camera value')
+    m.props[0x21C] = 3
+    m.call('settings_poll')
+    check(m.af_param(0xB) == 0, 'conversion lens: AF assist entry not off')
+    m.props[0x21C], m.props[0x250] = 0, 0
+    m.af_param(0xB, 1)                                 # a stock push writes the camera value
+    m.call('settings_poll')
+    check(m.af_param(0xB) == 0, 'stock push with the flash down not undone')
+    s.keys(KEY_OK)
+    check(s.setting(15) == 'STOCK' and m.af_param(0xB) == 1, 'STOCK: camera value not written back')
+    check(m.u32(machine.A_PROP_TABLE + 0x18 * 0x1D0 + 4) == 0, 'STOCK: AF assist getter slot not cleared')
+    n = len(m.af_sets)
+    m.af_param(0xB, 0)
+    m.call('settings_poll')
+    check(len(m.af_sets) == n, 'STOCK still writes the AF parameter')
+    check(not m.prop_sets, f'properties written: {m.prop_sets}')
+    s.keys(KEY_EFFECT)
+    finish(ctx, s)
+
+
 def sc_recipes(ctx):
     """Recipes: preview repoints Setting2 lists, close restores, Stock last, apply to MY2, dial, reboot; Stock on MY2
     (dial on it): previewed as stock over the slot's look, every recipe property and the name back to the factory
@@ -1510,7 +1547,7 @@ def sc_rom(ctx):
         check(b'ERROR boot (loader): stage 1 length/CRC mismatch' in held, f'{what}: no ERROR line held')
 
 
-SCENARIOS = [('boot', sc_boot), ('menu', sc_menu), ('snap', sc_snap), ('recipes', sc_recipes),
+SCENARIOS = [('boot', sc_boot), ('menu', sc_menu), ('snap', sc_snap), ('afaux', sc_afaux), ('recipes', sc_recipes),
              ('palette', sc_palette), ('dev', sc_dev), ('recipe-files', sc_recipe_files), ('view', sc_view),
              ('ae-hooks', sc_ae_hooks), ('console', sc_console), ('export', sc_export), ('loader', sc_loader),
              ('pattern', sc_pattern),

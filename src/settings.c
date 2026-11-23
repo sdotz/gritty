@@ -22,7 +22,7 @@
 #include "overlay.h"
 
 enum { S_TAV, S_AISOMIN, S_AISOMAX, S_AISOHOLD, S_SNAP, S_FRAMES, S_ZEBRA, S_CLARITY,
-       S_AISOTV, S_NR, S_NRW, S_NRM, S_NRS, S_TAVMIN, S_MAUTO, S_COUNT };
+       S_AISOTV, S_NR, S_NRW, S_NRM, S_NRS, S_TAVMIN, S_MAUTO, S_AFAUX, S_COUNT };
 enum { TAB_EXPOSURE, TAB_FOCUS, TAB_VIEW, TAB_IMAGE, TAB_COUNT };
 
 static const char *const TAB_NAME[TAB_COUNT] = { "EXPOSURE", "FOCUS", "VIEW", "IMAGE" };
@@ -53,12 +53,13 @@ static const desc_t DESC[S_COUNT] = {
     { "NR strong from",              "nrs",     26, 17, TAB_IMAGE },      /* ISO 100..25600, OFF (default 5000) */
     { "TAv: Auto-Hi minimum too",    "tavmin",  2,  0,  TAB_EXPOSURE },   /* OFF, ON (finding 21 R3) */
     { "Auto ISO in M",               "mauto",   2,  0,  TAB_EXPOSURE },   /* OFF, ON (R5) */
+    { "AF assist light",             "afaux",   2,  0,  TAB_FOCUS },      /* STOCK, WITH FLASH */
 };
 
 /* Rows in display order, grouped by what they do within each tab: Auto ISO limits, then Auto-Hi, then TAv. */
 static const uint8_t ORDER[S_COUNT] = {
     S_AISOMAX, S_AISOMIN, S_AISOHOLD, S_MAUTO, S_AISOTV, S_TAV, S_TAVMIN,
-    S_SNAP,
+    S_SNAP, S_AFAUX,
     S_FRAMES, S_ZEBRA,
     S_CLARITY, S_NR, S_NRW, S_NRM, S_NRS,
 };
@@ -482,6 +483,65 @@ static void hooks_update(void) {
     g_mauto_on = hp_switch(HP_MAUTO, NHP(HP_MAUTO), g_mauto_on, mauto != 0, "M");
 }
 
+/* ---- AF assist light only with the flash up ------------------------------------
+ * The AF does not read the AF assist property (0x1D0): the camera copies it into entry 0xB of the
+ * AF parameter DB (*0xA01B289C) with the setter 0xA016A57C, as OFF while a conversion lens is set
+ * (prop 0x21C == 3): in the full push 0xA016A704, which runs at mode changes and at every shutter
+ * half-press (hardware log 2026-11-23), and on message 0x203 (conversion lens changed). Every push
+ * reads the property with Prop_Get, so WITH FLASH sets the property's getter slot (empty in stock)
+ * to one that reads OFF while the built-in flash is down; the stored value, and so everything saved,
+ * stays the camera's. The poll writes the entry when the flash goes up or down, through the same
+ * setter. STOCK clears the slot and writes the camera's value back once. */
+#define AF_DB          (*(uint8_t *volatile *)0xA01B289Cu)               /* created at boot, 0 before */
+#define AF_DB_COUNT(d) (*(volatile int32_t *)((d) + 8))
+#define AF_DB_VALS(d)  (*(volatile uint32_t *volatile *)((d) + 0xC))
+#define AF_SET         ((void (*)(uint32_t, uint32_t))0xA016A57Du)       /* (entry, value), DB lock inside */
+#define AF_ENTRY_AUX   0xBu
+#define LENS_CONV      3u
+
+static int g_afaux_err, g_afaux_on;
+
+static const hpatch_t AF_GUARD[] = {   /* guard only: verified, never written */
+    { 0xA016A57Cu, 0x000A, 0x000A }, { 0xA016A57Eu, 0x0001, 0x0001 },   /* setter: movs r2,r1; movs r1,r0 */
+    { 0xA016A580u, 0x48FB, 0x48FB }, { 0xA016A584u, 0x6800, 0x6800 },   /* ldr r0,=AF DB; ldr r0,[r0] */
+    { 0xA016A778u, 0x250B, 0x250B },                                     /* full push: entry 0xB ... */
+    { 0xA016A784u, 0x20FF, 0x20FF }, { 0xA016A786u, 0x30D1, 0x30D1 },   /* ... = Prop_Get(0x1D0) */
+    { 0xA00E0E66u, 0x6869, 0x6869 }, { 0xA00E0E6Au, 0x6849, 0x6849 },   /* Prop_Get: table, slot +4 */
+    { 0xA00E0E70u, 0x4788, 0x4788 },                                     /*           blx getter */
+};
+#define AF_SET_LIT     (*(volatile uint32_t *)0xA016A970u)               /* the setter's DB literal */
+
+/* Prop_Get(0x1D0) in any task with the DB lock held: no Prop_Get / Prop_Get_Raw, no logging. */
+static uint32_t afaux_getter(uint32_t v) {
+    return GR2_FN_PROP_PEEK(GR2_PROPID_POPUP_STATUS) ? v : 0;
+}
+
+static void afaux_update(void) {
+    int want = g_val[S_AFAUX];
+    if (g_afaux_err || (!want && !g_afaux_on)) return;
+    if (want != g_afaux_on) {
+        if (want && (!hp_is(AF_GUARD, NHP(AF_GUARD), 0) || AF_SET_LIT != 0xA01B289Cu ||
+                     GR2_PROP_TABLE_PTR != GR2_PROP_TABLE || GR2_PROP_GETTER(GR2_PROPID_AF_AUX_LIGHT) != 0)) {
+            g_afaux_err = 1;
+            ERR("afaux: AF parameter setter or property getter not stock, not hooking");
+            return;
+        }
+        GR2_PROP_GETTER(GR2_PROPID_AF_AUX_LIGHT) = want ? (uint32_t)afaux_getter : 0;   /* one word store */
+        g_afaux_on = want;
+        DBG_HEX("afaux: getter hook", (uint32_t)want);
+    }
+    uint8_t *db = AF_DB;
+    if (!db || AF_DB_COUNT(db) <= (int32_t)AF_ENTRY_AUX || !AF_DB_VALS(db)) return;   /* AF not up yet */
+    uint32_t v = GR2_FN_PROP_GET(GR2_PROPID_AF_AUX_LIGHT);                     /* what the stock pushes write */
+    if (GR2_FN_PROP_GET(GR2_PROPID_CONVERSION_LENS) == LENS_CONV) v = 0;
+    if (AF_DB_VALS(db)[AF_ENTRY_AUX] != v) {
+        GR2_FN_PROP_LOCK();                 /* as the stock full push */
+        AF_SET(AF_ENTRY_AUX, v);
+        GR2_FN_PROP_UNLOCK();
+        DBG_HEX("afaux: AF assist entry", v);
+    }
+}
+
 /* ---- Engine ------------------------------------------------------------------ */
 
 static uint32_t g_ctx;
@@ -519,6 +579,7 @@ static void apply_all(void) {
     aiso_update();
     snap_update();
     hooks_update();
+    afaux_update();
     overlay_set_frame(g_val[S_FRAMES]);
     overlay_set_zebra(g_val[S_ZEBRA]);
 }
@@ -565,6 +626,7 @@ void settings_poll(void) {
     }
     tav_update();
     aiso_update();
+    afaux_update();
 }
 
 int settings_count(void) {
@@ -625,6 +687,7 @@ const char *settings_value(int i) {
     case S_NR:      return v ? "CUSTOM" : "STOCK";
     case S_TAVMIN:  return g_hook_err ? "ERR" : v ? "ON" : "OFF";
     case S_MAUTO:   return g_hook_err ? "ERR" : v ? "ON" : "OFF";
+    case S_AFAUX:   return g_afaux_err ? "ERR" : v ? "WITH FLASH" : "STOCK";
     default:        return ISO_TXT[v];
     }
 }
@@ -647,6 +710,7 @@ void settings_step(int i, int dir) {
     case S_AISOHOLD: aiso_update(); break;
     case S_TAVMIN:
     case S_MAUTO:   hooks_update(); break;
+    case S_AFAUX:   afaux_update(); break;
     default:
         nr_order(i);
         nr_update();

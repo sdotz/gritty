@@ -89,13 +89,16 @@ A_GST_MASK = 0xA04070B8               # plane mask of the current screen (bit 1 
 A_RGB_CANVAS = 0xA043EA44
 A_REC_RGB_REDRAW = 0xA0424360
 A_LV_ASPECT = 0xA0155B48
+A_PROP_TABLE_PTR = 0xA0129C3C        # per-property table, set by Prop_Init: 0x18 bytes per ID, getter slot at +4
+A_PROP_TABLE = 0xA0124694
+A_AF_DB = 0xA01B289C                  # AF parameter DB pointer: +8 count, +0xC u32 values; entry 0xB = AF assist
 SYSMODE_SHOOTING = 6
 
 FN = dict(
     memory_alloc=0xA0024D6E, file_open=0xA002C70E, file_read=0xA002CA98, file_write=0xA002CC4A,
     file_close=0xA002C904, find_first=0xA002EF58, find_next=0xA002F354, find_close=0xA002FA3C,
     file_mkdir=0xA002E6EC, load_file=0xA002CD2C,
-    prop_get=0xA00E0E2E, prop_get_raw=0xA00E0E80, prop_set=0xA00E0C94, prop_lock=0xA00E127A,
+    prop_get=0xA00E0E2E, prop_get_raw=0xA00E0E80, prop_peek=0xA00E0DA6, prop_set=0xA00E0C94, prop_lock=0xA00E127A,
     prop_unlock=0xA00E1286, prop_sa_read=0xA00E0FFE, prop_sa_write=0xA00E100E, prop_path=0xA00DDB68,
     pdb_clone=0xA0037E14, pdb_load=0xA0037A42, pdb_save=0xA0037AE6, pdb_free=0xA0037478,
     ui_state=0xA00E5F20, task_create=0xA0026708, delay=0xA0026836, get_time=0xA0027D96,
@@ -107,6 +110,7 @@ FN = dict(
     stock_run_ttl=0xA00EA1D4, opsr_getb=0xA003480C, opsr_setb=0xA0034530,
     shell_execute=0xA002A274, shell_result=0xA002A718, console_hook=0xA0039CB6,
     ref_tsk=0xA006A2A0, ref_mpl=0xA0067B00,                     # ARM-state kernel calls
+    af_param_set=0xA016A57C,
     recv=0xA0022A36, send=0xA0022A5E, sock_close=0xA0022B90,
 )
 STRING_RESOLVER = 0xA03A4AEF          # string ID -> UTF-16 pointer (finding 16 section 6)
@@ -395,6 +399,14 @@ class Machine:
         for k in range(3):
             self.props.setdefault(0x1BA + k, self.obj_alloc(0x44))
         self.ui_state = self.obj_alloc(0x300)
+        self.w32(A_PROP_TABLE_PTR, A_PROP_TABLE)
+        # AF parameter DB as the stock pushes leave it: AF assist (entry 0xB) = prop 0x1D0.
+        self.af_db = self.obj_alloc(0x10)
+        self.w32(A_AF_DB, self.af_db)
+        self.w32(self.af_db + 8, 0x20)
+        self.w32(self.af_db + 0xC, self.obj_alloc(4 * 0x20))
+        self.af_param(0xB, self.props.get(0x1D0, 1))
+        self.af_sets = []
         # B: property files by GetPropDataFileName (type, idx), finding 19 section 1.1
         self.prop_paths = {}
         for kind, n, fmt in ((0, 1, 'B:/P_COMMON.bin'), (1, 3, 'B:/P_MY0{}.bin'), (2, 6, 'B:/P_BOX0{}.bin')):
@@ -742,6 +754,18 @@ class Machine:
         return self.props[pid]
 
     def _prop_get(self):
+        pid = self.r(0)
+        v = self._prop(pid)
+        slot = A_PROP_TABLE + 0x18 * pid + 4
+        getter = self.u32(slot) if pid < 0x383 else 0
+        stock, = struct.unpack_from('>I', self.inputs.firmware, slot - FW_BASE)
+        if getter != stock:           # a TTY getter (stock ones are modelled by the seeded props): getter(value)
+            self.uc.reg_write(UC_ARM_REG_R0, v)
+            self.uc.reg_write(UC_ARM_REG_PC, getter)
+        else:
+            self.ret(v)
+
+    def _prop_peek(self):
         self.ret(self._prop(self.r(0)))
 
     def _prop_get_raw(self):
@@ -909,6 +933,18 @@ class Machine:
         if dev != 0:
             raise EmuError(f'set_layer on device {dev}: the harness models the LCD only')
         self.layer[layer] = self.u32(cfg)
+        self.ret(0)
+
+    def af_param(self, entry, value=None):
+        """AF parameter DB entry: read, or write it as a stock push would (value given)."""
+        a = self.u32(self.af_db + 0xC) + 4 * entry
+        if value is not None:
+            self.w32(a, value)
+        return self.u32(a)
+
+    def _af_param_set(self):
+        self.af_sets.append((self.r(0), self.r(1), self.prop_lock_depth))
+        self.af_param(self.r(0), self.r(1))
         self.ret(0)
 
     def _msg_post(self):
@@ -1092,12 +1128,15 @@ DEFAULT_PROPS = {
     0x111: 0x1E0,        # ISO Auto-High max (ISO 3200)
     0x113: 0x989681,     # Auto-High slowest shutter: Auto
     0x1A6: 0, 0x1A7: 0,  # Effect button / hold
+    0x1D0: 1,            # AF assist light on
     0x1E4: 1,            # English
     0x1E8: 0,            # Wi-Fi request
     0x1C3: 1, 0x1C4: 1, 0x1C5: 1,   # MY slot box links
     0x234: 0x03000000,   # firmware 3.00
     0x244: 0x12345678,   # serial
+    0x21C: 0,            # no conversion lens
     0x24A: 3,            # battery FULL
+    0x250: 0,            # built-in flash down
     0x254: 0x01E00280,   # OSD 640x480
     0x260: 1,            # Wi-Fi AP up
     0x2D9: 999,          # shots left

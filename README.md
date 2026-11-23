@@ -13,7 +13,7 @@ GR II TTY adds the things the GR II never got: film recipes you can preview live
 ## What you get
 - **Two new choices for the Effect button:** **TTY Menu** and **Recipes**, in every menu language.
 - **Recipes:** film looks (Portra, Gold, Ektar, Pro 400H, Superia, UltraMax, Vision3, Cinema Green, Cinema Yellow, Cinema Warm, Vivid Slide …), a rangefinder colour look and three black-and-white looks in a filmstrip. Live view shows the look while you browse; one press saves it into MY1, MY2 or MY3, and the camera shows that look whenever the slot is active, from the very first frame after power-on. The last entry, **Stock**, puts a slot back to the camera's own rendering. Your own presets (MY1–MY3, My Settings Box, Setting1/Setting2) export to recipe files with one press.
-- **TTY Menu:** Auto ISO slowest shutter, maximum ISO and *keep shutter*; Auto ISO in M; TAv fixes; Snap distances 0.7 m and 1.2 m; frame lines (XPan, 6×7, 4:5, 1:1, 16:9) and zebras; Clarity strength and custom high-ISO noise reduction; an INFO page with shutter count, battery, temperatures; developer tools.
+- **TTY Menu:** Auto ISO slowest shutter, maximum ISO and *keep shutter*; Auto ISO in M; TAv fixes; Snap distances 0.7 m and 1.2 m; AF assist light only with the flash up; frame lines (XPan, 6×7, 4:5, 1:1, 16:9) and zebras; Clarity strength and custom high-ISO noise reduction; an INFO page with shutter count, battery, temperatures; developer tools.
 - **Fast:** TTY lives inside the camera and starts with it; power-on is as quick as stock.
 - **Safe:** hold a key to start stock, automatic fallback to stock after failed starts, and a full uninstall with Ricoh's own file.
 
@@ -81,6 +81,7 @@ Press the Effect button you assigned to **TTY Menu**.
 | EXPOSURE | TAv: cap ISO at Auto-Hi max | OFF / **ON** | TAv respects the ISO Auto-High maximum (stock silently allows up to ISO 25600) |
 | EXPOSURE | TAv: Auto-Hi minimum too | **OFF** / ON | In TAv, ISO AUTO also respects the Auto-High minimum |
 | FOCUS | Snap distances | **STOCK** / 0.7m + 1.2m | The Snap choices "1m" and "1.5m" focus at 0.7 m and 1.2 m instead (labels, display and Full Press Snap included) |
+| FOCUS | AF assist light | **STOCK** / WITH FLASH | With the camera's *AF Auxiliary Light* on, the lamp lights only while the built-in flash is popped up: if you are flashing, it is dark and the lamp is no surprise. The camera's own setting and menu stay as they are; with it off, the lamp stays off |
 | VIEW | Frame lines | **OFF** / XPan 65:24 / 6x7 / 4:5 / 1:1 / 16:9 | Darkens live view outside the frame and outlines it; never recorded in photos |
 | VIEW | Zebras | **OFF** / Y 235+ / Y 245+ / Y 252+ | Stripes over areas at or above that brightness |
 | IMAGE | Clarity strength | **STOCK** / 1–9 | Strength of the Clarity effect (5 = none, stock 7) |

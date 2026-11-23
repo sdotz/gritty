@@ -36,6 +36,12 @@
 #define GR2_FN_PROP_GET      ((uint32_t (*)(uint32_t))0xA00E0E2F)           /* Prop_Get(id), runs the per-property getter hook */
 #define GR2_FN_PROP_GET_RAW  ((uint32_t (*)(uint32_t))0xA00E0E81)           /* stored value, no getter hook */
 #define GR2_FN_PROP_SET      ((void (*)(uint32_t, uint32_t))0xA00E0C95)     /* scalar setter, no range check */
+#define GR2_FN_PROP_PEEK     ((uint32_t (*)(uint32_t))0xA00E0DA7)           /* stored value, no lock, no getter: inside getters */
+/* Per-property getter slots: Prop_Get (DB lock held) returns f(value) when slot id is set; Prop_Get_Raw skips them.
+ * Table 0xA0124694 (Prop_Init: *0xA0129C3C = descriptor 0xA0129ADC +8), 0x18 bytes per ID, getter at +4. */
+#define GR2_PROP_TABLE_PTR   (*(volatile uint32_t *)0xA0129C3Cu)
+#define GR2_PROP_TABLE       0xA0124694u
+#define GR2_PROP_GETTER(id)  (*(volatile uint32_t *)(GR2_PROP_TABLE + 0x18u * (id) + 4u))
 #define GR2_FN_PROP_LOCK     ((void (*)(void))0xA00E127B)                   /* property-DB lock (efcset/nrset wrap writes) */
 #define GR2_FN_PROP_UNLOCK   ((void (*)(void))0xA00E1287)
 #define GR2_FN_MEMORY_ALLOC  ((void *(*)(uint32_t))0xA0024D6F)              /* GlobalHeap block */
@@ -201,8 +207,11 @@ typedef struct {
 #define GR2_PROPID_ISO_AUTO_CHANGE_TV 0x113  /* ISO Auto-High slowest shutter: 0x989681 Auto or Tv 0x30..0x180 */
 #define GR2_PROPID_EFX_BTN            0x1A6  /* Effect Button Setting, 32 stock values */
 #define GR2_PROPID_EFX_BTN_CONT       0x1A7  /* Effect Button Hold Setting: 0 Wi-Fi, 1 Aperture Preview */
+#define GR2_PROPID_AF_AUX_LIGHT       0x1D0  /* AF assist light 0 Off, 1 On (default) */
 #define GR2_PROPID_LANGUAGE           0x1E4  /* 0 = Japanese */
+#define GR2_PROPID_CONVERSION_LENS    0x21C  /* 3: AF assist forced off by the stock pushes */
 #define GR2_PROPID_DEVEL_MODE         0x22D  /* Startup.ttl boot gate */
+#define GR2_PROPID_POPUP_STATUS       0x250  /* built-in flash: 0 down (the flash getter 0xA00DB25E tests != 0) */
 
 /* Sv (ISO) encoding: 0xF0 + 16 per 1/3 stop (ISO 100 = 0xF0, 25600 = 0x270);
  * 0x2D0 = OFF in NR thresholds. Tv: 48 per stop, 0 = 1 s. */
