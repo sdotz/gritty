@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.2.0
 
 - TTY Menu, FOCUS: *AF assist light* STOCK / WITH FLASH. With the camera's AF Auxiliary Light on, WITH FLASH
   lights the lamp only while the built-in flash is popped up. No property is written: the camera's menu and
